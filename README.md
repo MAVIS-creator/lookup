@@ -1,11 +1,14 @@
-# Phone Intel Console
+# Professional Phone Intelligence Platform
 
-A portable, dependency-free phone intelligence application with a modern web interface.
+A portable, dependency-free enterprise phone intelligence platform with a modern web interface.
 
 It runs on Python standard library only and provides:
 - Phone normalization and metadata heuristics
 - Community risk reporting (spam, scam, safe, other)
-- Retention-aware lookup history in SQLite
+- Policy-driven retention tiers (90/365 days)
+- API key protected workflows with rate limiting
+- Source attribution and compliance flags in lookup results
+- Retention-aware lookup history and audit events in SQLite
 - A clean browser UI for lookups, reports, and history
 
 ## Current Scope
@@ -64,12 +67,15 @@ This app is built for portability and fast local execution:
 
 - Threaded HTTP server with standard library only
 - Static file hosting for frontend assets
-- API routing for health, lookup, report, and history
+- API routing for health, lookup, report, history, policies, and audit
 - CORS support for local browser usage
 - JSON request parsing and JSON responses
 - Input validation and structured error responses
 - Path traversal protection for static asset access
 - Startup retention purge for expired lookup records
+- API key authentication for protected endpoints
+- In-memory rate limiting guard
+- Audit event chain using hash-linked entries
 
 ### Lookup Features
 
@@ -77,6 +83,9 @@ This app is built for portability and fast local execution:
 - Country inference by known prefix map
 - Line type heuristic classification
 - Risk score computation from lookup heuristics and report counts
+- Risk profile classification (LOW/MEDIUM/HIGH)
+- Source attribution payload for each lookup
+- Compliance flags payload including retention and privacy metadata
 - Persistent lookup history with timestamp and expiry tracking
 
 ### Reporting Features
@@ -90,8 +99,11 @@ This app is built for portability and fast local execution:
 
 - Responsive modern layout
 - Styled cards for lookup, results, reporting, and history
+- API key field with local persistence for protected API access
+- Retention tier selector (standard and extended)
 - Live lookup rendering in metric cards
 - Dynamic risk badge color states
+- Source attribution and compliance JSON panels
 - History table with refresh control
 - Inline error and status messages
 - Basic reveal animation and decorative gradient background
@@ -102,6 +114,8 @@ This app is built for portability and fast local execution:
 - POST /api/lookup
 - POST /api/report
 - GET /api/history
+- GET /api/policies
+- GET /api/audit
 
 ## Endpoint Details
 
@@ -113,7 +127,9 @@ Purpose:
 Response:
 
         {
-            "status": "ok"
+            "status": "ok",
+            "service": "Phone Intelligence Platform",
+            "api_key_required": true
         }
 
 ### POST /api/lookup
@@ -125,7 +141,8 @@ Purpose:
 Request body:
 
         {
-            "phone": "+2348012345678"
+            "phone": "+2348012345678",
+            "retention_tier": "standard"
         }
 
 Response shape:
@@ -146,7 +163,20 @@ Response shape:
             },
             "created_at": "2026-04-25T00:00:00+00:00",
             "risk_score": 5,
-            "lookup_id": 1
+            "risk_profile": "LOW",
+            "lookup_id": 1,
+            "source_summary": {},
+            "compliance_flags": {
+                "consent_required": true,
+                "pii_stored": false,
+                "retention_tier": "standard",
+                "retention_days": 90,
+                "source_attribution": true
+            },
+            "audit_event": {
+                "id": 1,
+                "event_hash": "..."
+            }
         }
 
 ### POST /api/report
@@ -172,6 +202,10 @@ Response shape:
                 "scam": 0,
                 "safe": 0,
                 "other": 0
+            },
+            "audit_event": {
+                "id": 2,
+                "event_hash": "..."
             }
         }
 
@@ -202,7 +236,51 @@ Response shape:
                     "line_type_guess": "mobile_or_fixed",
                     "risk_score": 5,
                     "created_at": "2026-04-25T00:00:00+00:00",
-                    "expires_at": "2026-05-25T00:00:00+00:00"
+                    "expires_at": "2026-05-25T00:00:00+00:00",
+                    "retention_tier": "standard",
+                    "source_summary": {},
+                    "compliance_flags": {}
+                }
+            ]
+        }
+
+### GET /api/policies
+
+Purpose:
+- Return runtime policy configuration for clients and operators
+
+Response shape:
+
+        {
+            "retention_tiers": {
+                "standard": 90,
+                "extended": 365
+            },
+            "rate_limit_per_minute": 1000,
+            "api_key_header": "x-api-key"
+        }
+
+### GET /api/audit
+
+Purpose:
+- Return recent audit events with hash linkage metadata
+
+Query params:
+- limit: optional integer, default 50, max 500
+
+Response shape:
+
+        {
+            "items": [
+                {
+                    "id": 1,
+                    "action": "lookup",
+                    "subject": "+2348012345678",
+                    "actor": "key:...",
+                    "created_at": "2026-04-25T00:00:00+00:00",
+                    "prev_hash": null,
+                    "event_hash": "...",
+                    "details": {}
                 }
             ]
         }
@@ -235,7 +313,8 @@ Health check:
 Lookup payload:
 
     {
-      "phone": "+2348012345678"
+            "phone": "+2348012345678",
+            "retention_tier": "extended"
     }
 
 Report payload:
@@ -249,6 +328,14 @@ Report payload:
 History query:
 
     GET /api/history?phone=%2B2348012345678&limit=25
+
+Policy query:
+
+    GET /api/policies
+
+Audit query:
+
+    GET /api/audit?limit=25
 
 ## Data Model Summary
 
@@ -264,6 +351,9 @@ Stored fields:
 - risk_score
 - created_at
 - expires_at
+- retention_tier
+- source_summary
+- compliance_flags
 
 ### reports table
 
@@ -274,11 +364,24 @@ Stored fields:
 - note
 - created_at
 
+### audit_events table
+
+Stored fields:
+- id
+- action
+- subject
+- actor
+- details_json
+- created_at
+- prev_hash
+- event_hash
+
 ## Data Retention
 
 - Lookups are stored in SQLite at startup path configured in [app/config.py](app/config.py).
 - Expired records are purged automatically when the server starts.
-- Retention defaults are managed in [app/storage.py](app/storage.py).
+- Retention tiers are configured in [app/config.py](app/config.py): standard (90 days), extended (365 days).
+- Retention enforcement and lookup persistence are managed in [app/storage.py](app/storage.py).
 
 ## Scoring Model
 
@@ -302,7 +405,19 @@ Current risk score behavior in [app/service.py](app/service.py):
 
 - Path traversal protection is enforced for static file serving.
 - Input validation is applied to phone input and report categories.
+- API key guard can be enforced via runtime policy in [app/config.py](app/config.py).
+- Protected endpoints are rate-limited per minute.
+- Audit events are hash-linked for tamper-evident operational traces.
 - This project intentionally uses safe metadata heuristics and community reports, not unauthorized private identity data.
+
+## Configuration
+
+Environment variables:
+- PHONE_INTEL_HOST
+- PHONE_INTEL_PORT
+- PHONE_INTEL_API_KEY
+- PHONE_INTEL_REQUIRE_API_KEY
+- PHONE_INTEL_RATE_LIMIT_PER_MIN
 
 ## Portability Notes
 

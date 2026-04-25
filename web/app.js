@@ -1,9 +1,13 @@
 const lookupForm = document.getElementById("lookupForm");
 const reportForm = document.getElementById("reportForm");
+const apiKeyInput = document.getElementById("apiKeyInput");
 const phoneInput = document.getElementById("phoneInput");
+const retentionTierInput = document.getElementById("retentionTierInput");
 const lookupError = document.getElementById("lookupError");
 const riskBadge = document.getElementById("riskBadge");
 const resultGrid = document.getElementById("resultGrid");
+const sourceSummary = document.getElementById("sourceSummary");
+const complianceFlags = document.getElementById("complianceFlags");
 const reportStatus = document.getElementById("reportStatus");
 const historyBody = document.getElementById("historyBody");
 const refreshHistoryBtn = document.getElementById("refreshHistory");
@@ -11,8 +15,18 @@ const refreshHistoryBtn = document.getElementById("refreshHistory");
 let latestPhone = "";
 
 async function apiRequest(path, options = {}) {
+  const apiKey = apiKeyInput?.value?.trim() || "";
+  const headers = {
+    "Content-Type": "application/json",
+    ...(options.headers || {}),
+  };
+  if (apiKey) {
+    headers["x-api-key"] = apiKey;
+    localStorage.setItem("phoneIntelApiKey", apiKey);
+  }
+
   const response = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
+    headers,
     ...options,
   });
   const data = await response.json().catch(() => ({}));
@@ -43,12 +57,18 @@ function renderLookup(data) {
     makeCard("Scam Reports", data.report_counts.scam),
     makeCard("Safe Reports", data.report_counts.safe),
     makeCard("Lookup ID", data.lookup_id),
+    makeCard("Retention Tier", data.compliance_flags?.retention_tier || "standard"),
     makeCard("Time", new Date(data.created_at).toLocaleString()),
   ];
 
   resultGrid.classList.remove("muted");
   resultGrid.innerHTML = cards.join("");
   updateRiskBadge(data.risk_score);
+
+  sourceSummary.classList.remove("muted");
+  complianceFlags.classList.remove("muted");
+  sourceSummary.textContent = JSON.stringify(data.source_summary || {}, null, 2);
+  complianceFlags.textContent = JSON.stringify(data.compliance_flags || {}, null, 2);
 }
 
 function renderHistory(items) {
@@ -85,11 +105,12 @@ lookupForm.addEventListener("submit", async (event) => {
   lookupError.textContent = "";
   reportStatus.textContent = "";
   const phone = phoneInput.value.trim();
+  const retention_tier = retentionTierInput.value;
 
   try {
     const data = await apiRequest("/api/lookup", {
       method: "POST",
-      body: JSON.stringify({ phone }),
+      body: JSON.stringify({ phone, retention_tier }),
     });
     latestPhone = data.normalized_phone;
     renderLookup(data);
@@ -126,3 +147,8 @@ reportForm.addEventListener("submit", async (event) => {
 refreshHistoryBtn.addEventListener("click", loadHistory);
 
 loadHistory();
+
+const savedApiKey = localStorage.getItem("phoneIntelApiKey");
+if (savedApiKey && apiKeyInput) {
+  apiKeyInput.value = savedApiKey;
+}

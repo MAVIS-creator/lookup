@@ -13,16 +13,27 @@
   <main class="shell">
     <header class="hero">
       <p class="eyebrow">Portable • Dependency-Free</p>
-      <h1>Phone Intel Console</h1>
-      <p class="subtitle">Safe phone metadata lookup with retention history and community risk reports.</p>
+      <h1>Phone Intelligence Platform</h1>
+      <p class="subtitle">Compliance-oriented lookup workflows with retention policies, source attribution, and audit-linked results.</p>
     </header>
 
     <section class="card lookup-card">
       <h2>Lookup</h2>
       <form id="lookupForm" class="grid">
         <label>
+          API Key
+          <input id="apiKeyInput" name="apiKey" placeholder="x-api-key value" autocomplete="off">
+        </label>
+        <label>
           Phone Number
           <input id="phoneInput" name="phone" placeholder="+2348012345678" required>
+        </label>
+        <label>
+          Retention Tier
+          <select id="retentionTierInput" name="retentionTier">
+            <option value="standard" selected>standard (90 days)</option>
+            <option value="extended">extended (365 days)</option>
+          </select>
         </label>
         <button type="submit">Run Lookup</button>
       </form>
@@ -35,6 +46,16 @@
         <span id="riskBadge" class="badge">Risk: --</span>
       </div>
       <div id="resultGrid" class="result-grid muted">No lookup yet.</div>
+      <div class="split-panels">
+        <article>
+          <h3>Source Attribution</h3>
+          <pre id="sourceSummary" class="code-box muted">No source summary yet.</pre>
+        </article>
+        <article>
+          <h3>Compliance Flags</h3>
+          <pre id="complianceFlags" class="code-box muted">No compliance flags yet.</pre>
+        </article>
+      </div>
     </section>
 
     <section class="card report-card">

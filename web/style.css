@@ -99,7 +99,7 @@ h2 {
 
 .grid {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: repeat(3, minmax(180px, 1fr)) auto;
   gap: 10px;
   align-items: end;
 }
@@ -179,6 +179,34 @@ button.ghost {
   display: grid;
   gap: 8px;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.split-panels {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.split-panels h3 {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+  color: #3f454a;
+}
+
+.code-box {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.85);
+  padding: 10px;
+  min-height: 110px;
+  max-height: 240px;
+  overflow: auto;
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 0.82rem;
+  line-height: 1.4;
 }
 
 .kv {

@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from typing import Dict
 
+from app.config import RETENTION_TIERS
 from app.phone_utils import infer_country, infer_line_type, normalize_phone
 from app.storage import Storage
 
@@ -18,11 +19,46 @@ class LookupService:
         score -= (report_counts.get("safe", 0) * 4)
         return max(0, min(score, 100))
 
-    def lookup_phone(self, raw_phone: str) -> Dict:
+    def _risk_profile(self, risk_score: int) -> str:
+        if risk_score >= 60:
+            return "HIGH"
+        if risk_score >= 25:
+            return "MEDIUM"
+        return "LOW"
+
+    def _source_attribution(self, normalized_phone: str, country_code: str) -> Dict:
+        return {
+            "telecom_registry": {
+                "type": "carrier_metadata",
+                "status": "available",
+                "country": country_code,
+                "attribution": "Local heuristic source model",
+            },
+            "business_intelligence": {
+                "type": "public_business_profile",
+                "status": "placeholder",
+                "country": country_code,
+                "attribution": "Connector ready for authorized registry APIs",
+            },
+            "risk_signals": {
+                "type": "community_reports",
+                "status": "available",
+                "country": "GLOBAL",
+                "attribution": "Local report aggregation",
+            },
+            "query_scope": {
+                "normalized_phone": normalized_phone,
+                "privacy_mode": "PII-minimized",
+            },
+        }
+
+    def lookup_phone(self, raw_phone: str, retention_tier: str = "standard") -> Dict:
         normalized_phone = normalize_phone(raw_phone)
         country = infer_country(normalized_phone)
         line_type_guess = infer_line_type(normalized_phone)
         report_counts = self.storage.get_report_counts(normalized_phone)
+        if retention_tier not in RETENTION_TIERS:
+            raise ValueError("Invalid retention tier")
 
         result = {
             "raw_phone": raw_phone,
@@ -33,9 +69,27 @@ class LookupService:
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
         result["risk_score"] = self._compute_risk_score(line_type_guess, report_counts)
+        result["risk_profile"] = self._risk_profile(result["risk_score"])
 
-        lookup_id = self.storage.save_lookup(result)
+        source_summary = self._source_attribution(normalized_phone, country["code"])
+        compliance_flags = {
+            "consent_required": True,
+            "pii_stored": False,
+            "retention_tier": retention_tier,
+            "retention_days": RETENTION_TIERS[retention_tier],
+            "source_attribution": True,
+        }
+
+        lookup_id = self.storage.save_lookup(
+            result,
+            retention_days=RETENTION_TIERS[retention_tier],
+            retention_tier=retention_tier,
+            source_summary=source_summary,
+            compliance_flags=compliance_flags,
+        )
         result["lookup_id"] = lookup_id
+        result["source_summary"] = source_summary
+        result["compliance_flags"] = compliance_flags
         return result
 
     def add_report(self, raw_phone: str, category: str, note: str = "") -> Dict:

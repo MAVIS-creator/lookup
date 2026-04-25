@@ -1,11 +1,22 @@
 import json
 import mimetypes
+import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from app.config import HOST, PORT, WEB_DIR, DB_PATH
+from app.config import (
+    HOST,
+    PORT,
+    WEB_DIR,
+    DB_PATH,
+    API_KEY,
+    API_KEY_HEADER,
+    REQUIRE_API_KEY,
+    RATE_LIMIT_PER_MINUTE,
+    RETENTION_TIERS,
+)
 from app.phone_utils import normalize_phone
 from app.service import LookupService
 from app.storage import Storage
@@ -24,6 +35,47 @@ def _json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict):
 class AppHandler(BaseHTTPRequestHandler):
     storage = Storage(str(DB_PATH))
     service = LookupService(storage)
+    _request_log = {}
+
+    def _client_token(self) -> str:
+        key = self.headers.get(API_KEY_HEADER, "").strip()
+        if key:
+            return f"key:{key}"
+        return f"ip:{self.client_address[0]}"
+
+    def _authorize(self):
+        if not REQUIRE_API_KEY:
+            return True
+        supplied = self.headers.get(API_KEY_HEADER, "").strip()
+        return supplied == API_KEY
+
+    def _rate_limited(self) -> bool:
+        token = self._client_token()
+        now = time.time()
+        window_start = now - 60
+        bucket = self._request_log.get(token, [])
+        bucket = [ts for ts in bucket if ts >= window_start]
+        if len(bucket) >= RATE_LIMIT_PER_MINUTE:
+            self._request_log[token] = bucket
+            return True
+        bucket.append(now)
+        self._request_log[token] = bucket
+        return False
+
+    def _guard_api_request(self):
+        parsed = urlparse(self.path)
+        if not parsed.path.startswith("/api/") or parsed.path == "/api/health":
+            return True
+
+        if not self._authorize():
+            _json_response(self, HTTPStatus.UNAUTHORIZED, {"error": "Unauthorized API key"})
+            return False
+
+        if self._rate_limited():
+            _json_response(self, HTTPStatus.TOO_MANY_REQUESTS, {"error": "Rate limit exceeded"})
+            return False
+
+        return True
 
     def _read_json_body(self) -> dict:
         length = int(self.headers.get("Content-Length", "0"))
@@ -60,10 +112,33 @@ class AppHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
+        if not self._guard_api_request():
+            return
+
         parsed = urlparse(self.path)
 
         if parsed.path == "/api/health":
-            _json_response(self, HTTPStatus.OK, {"status": "ok"})
+            _json_response(
+                self,
+                HTTPStatus.OK,
+                {
+                    "status": "ok",
+                    "service": "Phone Intelligence Platform",
+                    "api_key_required": REQUIRE_API_KEY,
+                },
+            )
+            return
+
+        if parsed.path == "/api/policies":
+            _json_response(
+                self,
+                HTTPStatus.OK,
+                {
+                    "retention_tiers": RETENTION_TIERS,
+                    "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE,
+                    "api_key_header": API_KEY_HEADER,
+                },
+            )
             return
 
         if parsed.path == "/api/history":
@@ -87,9 +162,23 @@ class AppHandler(BaseHTTPRequestHandler):
             _json_response(self, HTTPStatus.OK, {"items": history})
             return
 
+        if parsed.path == "/api/audit":
+            query = parse_qs(parsed.query)
+            limit_raw = query.get("limit", ["50"])[0]
+            try:
+                limit = int(limit_raw)
+            except ValueError:
+                limit = 50
+            events = self.storage.get_audit_events(limit)
+            _json_response(self, HTTPStatus.OK, {"items": events})
+            return
+
         self._serve_static(parsed.path)
 
     def do_POST(self):
+        if not self._guard_api_request():
+            return
+
         parsed = urlparse(self.path)
         try:
             payload = self._read_json_body()
@@ -99,11 +188,26 @@ class AppHandler(BaseHTTPRequestHandler):
 
         if parsed.path == "/api/lookup":
             phone = payload.get("phone", "")
+            retention_tier = payload.get("retention_tier", "standard")
             try:
-                result = self.service.lookup_phone(phone)
+                result = self.service.lookup_phone(phone, retention_tier=retention_tier)
             except ValueError as exc:
                 _json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
                 return
+            event = self.storage.append_audit_event(
+                action="lookup",
+                subject=result["normalized_phone"],
+                actor=self._client_token(),
+                details={
+                    "lookup_id": result["lookup_id"],
+                    "retention_tier": result["compliance_flags"]["retention_tier"],
+                    "risk_score": result["risk_score"],
+                },
+            )
+            result["audit_event"] = {
+                "id": event["id"],
+                "event_hash": event["event_hash"],
+            }
             _json_response(self, HTTPStatus.OK, result)
             return
 
@@ -116,6 +220,16 @@ class AppHandler(BaseHTTPRequestHandler):
             except ValueError as exc:
                 _json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
                 return
+            event = self.storage.append_audit_event(
+                action="report",
+                subject=result["normalized_phone"],
+                actor=self._client_token(),
+                details={"category": category, "report_id": result["report_id"]},
+            )
+            result["audit_event"] = {
+                "id": event["id"],
+                "event_hash": event["event_hash"],
+            }
             _json_response(self, HTTPStatus.OK, result)
             return
 
