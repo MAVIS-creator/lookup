@@ -16,6 +16,7 @@ from app.config import (
     REQUIRE_API_KEY,
     RATE_LIMIT_PER_MINUTE,
     RETENTION_TIERS,
+    PEP_PROVIDER_MODE,
 )
 from app.phone_utils import normalize_phone
 from app.service import LookupService
@@ -137,6 +138,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     "retention_tiers": RETENTION_TIERS,
                     "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE,
                     "api_key_header": API_KEY_HEADER,
+                    "pep_provider_mode": PEP_PROVIDER_MODE,
                 },
             )
             return
@@ -171,6 +173,32 @@ class AppHandler(BaseHTTPRequestHandler):
                 limit = 50
             events = self.storage.get_audit_events(limit)
             _json_response(self, HTTPStatus.OK, {"items": events})
+            return
+
+        if parsed.path == "/api/pep/history":
+            query = parse_qs(parsed.query)
+            subject_name = query.get("full_name", [None])[0]
+            phone = query.get("phone", [None])[0]
+            limit_raw = query.get("limit", ["50"])[0]
+            try:
+                limit = int(limit_raw)
+            except ValueError:
+                limit = 50
+
+            normalized_phone = None
+            if phone:
+                try:
+                    normalized_phone = normalize_phone(phone)
+                except ValueError as exc:
+                    _json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+                    return
+
+            items = self.storage.get_pep_history(
+                subject_name=subject_name,
+                normalized_phone=normalized_phone,
+                limit=limit,
+            )
+            _json_response(self, HTTPStatus.OK, {"items": items})
             return
 
         self._serve_static(parsed.path)
@@ -225,6 +253,39 @@ class AppHandler(BaseHTTPRequestHandler):
                 subject=result["normalized_phone"],
                 actor=self._client_token(),
                 details={"category": category, "report_id": result["report_id"]},
+            )
+            result["audit_event"] = {
+                "id": event["id"],
+                "event_hash": event["event_hash"],
+            }
+            _json_response(self, HTTPStatus.OK, result)
+            return
+
+        if parsed.path == "/api/pep/screen":
+            full_name = payload.get("full_name", "")
+            phone = payload.get("phone", "")
+            country_code = payload.get("country_code", "")
+            purpose = payload.get("purpose", "kyc_verification")
+            try:
+                result = self.service.screen_pep(
+                    full_name=full_name,
+                    phone=phone,
+                    country_code=country_code,
+                    purpose=purpose,
+                )
+            except ValueError as exc:
+                _json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+                return
+
+            event = self.storage.append_audit_event(
+                action="pep_screen",
+                subject=full_name,
+                actor=self._client_token(),
+                details={
+                    "screen_id": result["screen_id"],
+                    "provider": result.get("provider"),
+                    "match_count": result.get("match_count", 0),
+                },
             )
             result["audit_event"] = {
                 "id": event["id"],

@@ -3,12 +3,14 @@ from typing import Dict
 
 from app.config import RETENTION_TIERS
 from app.phone_utils import infer_country, infer_line_type, normalize_phone
+from app.providers import get_pep_provider
 from app.storage import Storage
 
 
 class LookupService:
     def __init__(self, storage: Storage):
         self.storage = storage
+        self.pep_provider = get_pep_provider()
 
     def _compute_risk_score(self, line_type_guess: str, report_counts: Dict[str, int]) -> int:
         score = 5
@@ -104,3 +106,44 @@ class LookupService:
             "normalized_phone": normalized_phone,
             "report_counts": counts,
         }
+
+    def screen_pep(
+        self,
+        full_name: str,
+        phone: str = "",
+        country_code: str = "",
+        purpose: str = "kyc_verification",
+    ) -> Dict:
+        name = (full_name or "").strip()
+        if not name:
+            raise ValueError("full_name is required")
+
+        normalized_phone = ""
+        if phone:
+            normalized_phone = normalize_phone(phone)
+            if not country_code:
+                country_code = infer_country(normalized_phone)["code"]
+
+        subject = {
+            "full_name": name,
+            "phone": normalized_phone,
+            "country_code": country_code or "UNK",
+            "purpose": purpose,
+        }
+
+        result = self.pep_provider.screen(subject)
+        screen_id = self.storage.save_pep_screen(
+            subject_name=name,
+            normalized_phone=normalized_phone or None,
+            country_code=subject["country_code"],
+            result=result,
+        )
+
+        result["screen_id"] = screen_id
+        result["compliance_flags"] = {
+            "authorized_source_required": True,
+            "manual_review_required": bool(result.get("match_count", 0)),
+            "purpose": purpose,
+            "pii_minimization": True,
+        }
+        return result

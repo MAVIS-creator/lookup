@@ -20,3 +20,9 @@ RETENTION_TIERS = {
 	"standard": 90,
 	"extended": 365,
 }
+
+# PEP provider integration
+PEP_PROVIDER_MODE = os.getenv("PHONE_INTEL_PEP_PROVIDER", "mock").lower()
+PEP_PROVIDER_ENDPOINT = os.getenv("PHONE_INTEL_PEP_ENDPOINT", "")
+PEP_PROVIDER_TOKEN = os.getenv("PHONE_INTEL_PEP_TOKEN", "")
+PEP_PROVIDER_TIMEOUT_SECONDS = int(os.getenv("PHONE_INTEL_PEP_TIMEOUT_SECONDS", "12"))

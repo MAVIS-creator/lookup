@@ -116,6 +116,8 @@ This app is built for portability and fast local execution:
 - GET /api/history
 - GET /api/policies
 - GET /api/audit
+- POST /api/pep/screen
+- GET /api/pep/history
 
 ## Endpoint Details
 
@@ -285,6 +287,45 @@ Response shape:
             ]
         }
 
+    ### POST /api/pep/screen
+
+    Purpose:
+    - Run compliant PEP screening through configured authorized provider adapter
+
+    Request body:
+
+        {
+            "full_name": "John Okafor",
+            "phone": "+2348012345678",
+            "country_code": "NG",
+            "purpose": "kyc_verification"
+        }
+
+    Response shape:
+
+        {
+            "provider": "mock",
+            "provider_request_id": "mock-...",
+            "scanned_at": "2026-04-25T00:00:00+00:00",
+            "subject": {},
+            "match_count": 0,
+            "matches": [],
+            "risk_level": "low",
+            "screen_id": 1,
+            "compliance_flags": {},
+            "audit_event": {}
+        }
+
+    ### GET /api/pep/history
+
+    Purpose:
+    - Retrieve persisted PEP screening history for audit and review workflows
+
+    Query params:
+    - full_name: optional exact subject filter
+    - phone: optional phone filter
+    - limit: optional integer, default 50, max 500
+
 ## Run Locally
 
 1. Open terminal in the project root.
@@ -337,6 +378,19 @@ Audit query:
 
     GET /api/audit?limit=25
 
+PEP screen payload:
+
+    {
+      "full_name": "John Okafor",
+      "phone": "+2348012345678",
+      "country_code": "NG",
+      "purpose": "kyc_verification"
+    }
+
+PEP history query:
+
+    GET /api/pep/history?full_name=John%20Okafor&limit=25
+
 ## Data Model Summary
 
 ### lookups table
@@ -375,6 +429,19 @@ Stored fields:
 - created_at
 - prev_hash
 - event_hash
+
+### pep_screens table
+
+Stored fields:
+- id
+- subject_name
+- normalized_phone
+- country_code
+- provider
+- match_count
+- risk_level
+- response_json
+- created_at
 
 ## Data Retention
 
@@ -418,6 +485,10 @@ Environment variables:
 - PHONE_INTEL_API_KEY
 - PHONE_INTEL_REQUIRE_API_KEY
 - PHONE_INTEL_RATE_LIMIT_PER_MIN
+- PHONE_INTEL_PEP_PROVIDER
+- PHONE_INTEL_PEP_ENDPOINT
+- PHONE_INTEL_PEP_TOKEN
+- PHONE_INTEL_PEP_TIMEOUT_SECONDS
 
 ## Portability Notes
 

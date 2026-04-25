@@ -66,6 +66,21 @@ class Storage:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS pep_screens (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    subject_name TEXT NOT NULL,
+                    normalized_phone TEXT,
+                    country_code TEXT,
+                    provider TEXT NOT NULL,
+                    match_count INTEGER NOT NULL,
+                    risk_level TEXT NOT NULL,
+                    response_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
 
     def _ensure_lookup_columns(self, conn):
         rows = conn.execute("PRAGMA table_info(lookups)").fetchall()
@@ -223,3 +238,65 @@ class Storage:
             event["details"] = json.loads(event.pop("details_json") or "{}")
             events.append(event)
         return events
+
+    def save_pep_screen(
+        self,
+        subject_name: str,
+        normalized_phone: Optional[str],
+        country_code: Optional[str],
+        result: Dict,
+    ) -> int:
+        with self._connect() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO pep_screens (
+                    subject_name, normalized_phone, country_code, provider,
+                    match_count, risk_level, response_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    subject_name,
+                    normalized_phone,
+                    country_code,
+                    result.get("provider", "unknown"),
+                    int(result.get("match_count", 0)),
+                    result.get("risk_level", "unknown"),
+                    json.dumps(result, ensure_ascii=False),
+                    _utc_now_iso(),
+                ),
+            )
+            return cur.lastrowid
+
+    def get_pep_history(
+        self,
+        subject_name: Optional[str] = None,
+        normalized_phone: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[Dict]:
+        query = """
+            SELECT id, subject_name, normalized_phone, country_code, provider,
+                   match_count, risk_level, response_json, created_at
+            FROM pep_screens
+            WHERE 1 = 1
+        """
+        params = []
+
+        if subject_name:
+            query += " AND subject_name = ?"
+            params.append(subject_name)
+        if normalized_phone:
+            query += " AND normalized_phone = ?"
+            params.append(normalized_phone)
+
+        query += " ORDER BY id DESC LIMIT ?"
+        params.append(max(1, min(limit, 500)))
+
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+
+        output = []
+        for row in rows:
+            item = dict(row)
+            item["response"] = json.loads(item.pop("response_json") or "{}")
+            output.append(item)
+        return output
