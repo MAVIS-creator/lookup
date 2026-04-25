@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+phone_retention.db
+.vscode/

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phone Intel Console</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="bg-shape bg-shape-a"></div>
+  <div class="bg-shape bg-shape-b"></div>
+
+  <main class="shell">
+    <header class="hero">
+      <p class="eyebrow">Portable • Dependency-Free</p>
+      <h1>Phone Intel Console</h1>
+      <p class="subtitle">Safe phone metadata lookup with retention history and community risk reports.</p>
+    </header>
+
+    <section class="card lookup-card">
+      <h2>Lookup</h2>
+      <form id="lookupForm" class="grid">
+        <label>
+          Phone Number
+          <input id="phoneInput" name="phone" placeholder="+2348012345678" required>
+        </label>
+        <button type="submit">Run Lookup</button>
+      </form>
+      <p id="lookupError" class="error" aria-live="polite"></p>
+    </section>
+
+    <section class="card result-card">
+      <div class="result-head">
+        <h2>Result</h2>
+        <span id="riskBadge" class="badge">Risk: --</span>
+      </div>
+      <div id="resultGrid" class="result-grid muted">No lookup yet.</div>
+    </section>
+
+    <section class="card report-card">
+      <h2>Community Report</h2>
+      <form id="reportForm" class="grid">
+        <label>
+          Category
+          <select id="categoryInput" name="category">
+            <option value="spam">Spam</option>
+            <option value="scam">Scam</option>
+            <option value="safe">Safe</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+        <label>
+          Note (optional)
+          <input id="noteInput" name="note" placeholder="Short context">
+        </label>
+        <button type="submit">Submit Report</button>
+      </form>
+      <p id="reportStatus" class="muted" aria-live="polite"></p>
+    </section>
+
+    <section class="card history-card">
+      <div class="result-head">
+        <h2>Lookup History</h2>
+        <button id="refreshHistory" type="button" class="ghost">Refresh</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Time (UTC)</th>
+              <th>Phone</th>
+              <th>Country</th>
+              <th>Line Type</th>
+              <th>Risk</th>
+            </tr>
+          </thead>
+          <tbody id="historyBody">
+            <tr><td colspan="5" class="muted">No records yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
